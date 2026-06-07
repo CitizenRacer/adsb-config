@@ -1,0 +1,9 @@
+[Unit]
+Description=RTL-SDR USB recovery watchdog
+After=dump1090-fa.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rtlsdr-watchdog
+StandardOutput=journal
+StandardError=journal

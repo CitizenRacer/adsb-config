@@ -1,0 +1,84 @@
+#!/bin/bash
+# Detects when the RTL-SDR dongle has hung and restores it without a full reboot.
+# The RTL2832U chip hangs after hours of operation (USB errors -71/-110).
+# Recovery: uhubctl power-cycles hub 1 port 2 (where the dongle lives), then
+# restarts dump1090-fa. Falls back to sysfs authorized toggle if uhubctl fails.
+# Last resort: full reboot if all software recovery attempts fail.
+
+set -euo pipefail
+
+VENDOR="0bda"
+PRODUCT="2832"
+SERVICE="dump1090-fa.service"
+LOG_TAG="rtlsdr-watchdog"
+HUB_LOCATION="1"
+HUB_PORT="2"
+SYSFS_PORT="/sys/bus/usb/devices/1-2"
+LOCKFILE="/var/lock/rtlsdr-watchdog.lock"
+
+log() { logger -t "$LOG_TAG" "$*"; echo "$*"; }
+
+# Prevent concurrent instances (timer can fire while a previous run is still in progress)
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+    log "Another instance is already running — exiting"
+    exit 0
+fi
+
+# Count "no supported devices" errors in the last 5 minutes
+recent_errors=$(journalctl -u "$SERVICE" --since "5 minutes ago" --no-pager 2>/dev/null \
+    | grep -c "no supported devices found" || true)
+
+if [ "$recent_errors" -lt 3 ]; then
+    exit 0
+fi
+
+log "RTL-SDR crash loop detected ($recent_errors errors in 5 min) — attempting USB recovery"
+
+# Stop dump1090-fa cleanly before touching USB to avoid it racing to reopen the device
+systemctl stop "$SERVICE" || true
+
+recovered=false
+
+# Primary: uhubctl power cycle (full electrical reset — most reliable)
+log "Power-cycling hub $HUB_LOCATION port $HUB_PORT via uhubctl"
+if uhubctl -l "$HUB_LOCATION" -p "$HUB_PORT" -a off -w 100 2>/dev/null; then
+    sleep 5
+    if uhubctl -l "$HUB_LOCATION" -p "$HUB_PORT" -a on -w 100 2>/dev/null; then
+        sleep 3
+        if grep -qr "$VENDOR" /sys/bus/usb/devices/*/idVendor 2>/dev/null; then
+            log "Device re-enumerated after uhubctl power cycle"
+            recovered=true
+        else
+            log "uhubctl power cycle completed but device did not re-enumerate"
+        fi
+    fi
+fi
+
+# Fallback: sysfs authorized toggle (softer reset, no actual power cycle)
+if [ "$recovered" = false ]; then
+    log "Falling back to sysfs authorized toggle on $SYSFS_PORT"
+    if [ -f "$SYSFS_PORT/authorized" ]; then
+        echo 0 > "$SYSFS_PORT/authorized" 2>/dev/null || true
+        sleep 3
+        echo 1 > "$SYSFS_PORT/authorized" 2>/dev/null || true
+        sleep 3
+        if grep -q "$VENDOR" "$SYSFS_PORT/idVendor" 2>/dev/null; then
+            log "Device re-enumerated after authorized toggle"
+            recovered=true
+        fi
+    else
+        log "Sysfs path $SYSFS_PORT not found — device completely gone from bus"
+    fi
+fi
+
+if [ "$recovered" = true ]; then
+    log "USB recovery succeeded — restarting $SERVICE"
+    systemctl start "$SERVICE"
+    log "Done"
+else
+    log "USB recovery failed — device still unresponsive after all attempts"
+    log "Rebooting system as last resort to recover RTL-SDR dongle"
+    journalctl --sync 2>/dev/null || true
+    systemctl reboot
+fi
