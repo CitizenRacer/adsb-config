@@ -1,7 +1,8 @@
 [DEFAULT]
-bantime  = 1h
-findtime = 1h
-maxretry = 5
+bantime   = 1h
+findtime  = 1h
+maxretry  = 5
+ignoreip  = 127.0.0.1/8 ::1 10.0.0.0/16 100.64.0.0/10
 
 [sshd]
 enabled  = true
