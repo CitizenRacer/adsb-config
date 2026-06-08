@@ -1,0 +1,18 @@
+[DEFAULT]
+bantime  = 1h
+findtime = 1h
+maxretry = 5
+
+[sshd]
+enabled  = true
+mode     = aggressive
+port     = ssh
+maxretry = 5
+findtime = 1h
+bantime  = 24h
+
+[recidive]
+enabled  = true
+bantime  = 7d
+findtime = 1d
+maxretry = 3
