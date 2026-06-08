@@ -1,8 +1,11 @@
 [DEFAULT]
-bantime   = 1h
-findtime  = 1h
-maxretry  = 5
-ignoreip  = 127.0.0.1/8 ::1 10.0.0.0/16 100.64.0.0/10
+bantime            = 1h
+bantime.increment  = true
+bantime.multiplier = 2
+bantime.maxtime    = 30d
+findtime           = 1h
+maxretry           = 5
+ignoreip           = 127.0.0.1/8 ::1 10.0.0.0/16 100.64.0.0/10
 
 [sshd]
 enabled  = true
@@ -10,10 +13,3 @@ mode     = aggressive
 port     = ssh
 maxretry = 5
 findtime = 1h
-bantime  = 24h
-
-[recidive]
-enabled  = true
-bantime  = 7d
-findtime = 1d
-maxretry = 3
