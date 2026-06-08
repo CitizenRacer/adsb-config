@@ -25,9 +25,12 @@ if ! flock -n 9; then
     exit 0
 fi
 
-# Count "no supported devices" errors in the last 5 minutes
+# Count crash-loop errors in the last 5 minutes.
+# Matches two distinct failure modes:
+#   "no supported devices found"  — USB hang (errors -71/-110), the original failure
+#   "usb_claim_interface error -6" — device busy (DVB driver reclaim or concurrent open)
 recent_errors=$(journalctl -u "$SERVICE" --since "5 minutes ago" --no-pager 2>/dev/null \
-    | grep -c "no supported devices found" || true)
+    | grep -cE "no supported devices found|usb_claim_interface error -6" || true)
 
 if [ "$recent_errors" -lt 3 ]; then
     exit 0
